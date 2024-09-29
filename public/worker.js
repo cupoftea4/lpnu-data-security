@@ -1,29 +1,33 @@
 importScripts('/md5.js');
 
+// Adjust the chunk size for file processing (e.g., 1 MB chunks)
+const FILE_READER_CHUNK_SIZE = 1024 * 1024; // 1 MB chunks
+
 // worker.js
 self.onmessage = async (e) => {
-  const { file, FILE_READER_CHUNK_SIZE, CHUNK_BYTES } = e.data;
+  const { file } = e.data;
 
   const md5 = new MD5();
-  
+
   async function* fileToBytesGenerator(file) {
     let i = 0;
     while (i < file.size) {
       const blob = file.slice(i, i + FILE_READER_CHUNK_SIZE);
-      const data = await blob.arrayBuffer(); // Fully load the chunk
+      const data = await blob.arrayBuffer(); // Fully load the chunk into memory
       const chunk = new Uint8Array(data);
-  
-      // Yield the chunk in smaller parts if needed
-      for (let j = 0; j < chunk.length; j += CHUNK_BYTES) {
-        yield chunk.slice(j, Math.min(j + CHUNK_BYTES, chunk.length));
-      }
+
+      yield chunk; // Yield the chunk as is
+
       i += FILE_READER_CHUNK_SIZE;
     }
   }
 
   try {
     const gen = fileToBytesGenerator(file);
-    const hash = await md5.hash(gen);
+    console.log('Processing file chunks...');
+    console.time('hash_' + file.name);
+    const hash = await md5.hash(gen); // Process the file chunks with MD5
+    console.timeEnd('hash_' + file.name);
     self.postMessage({ hash });
   } catch (error) {
     console.error(error);
