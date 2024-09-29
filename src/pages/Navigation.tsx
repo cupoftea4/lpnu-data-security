@@ -17,7 +17,7 @@ const Navigation = () => {
           className="bg-white rounded-lg p-6 flex flex-col items-center justify-center hover:scale-105 transition-transform"
         >
           <Dice2 className="h-12 w-12 text-primary" />
-          <h3 className="mt-4 text-xl font-semibold text-primary">???</h3>
+          <h3 className="mt-4 text-xl font-semibold text-primary">MD5</h3>
         </Link>
         <Link
           to="#"

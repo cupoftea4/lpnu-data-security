@@ -3,10 +3,39 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Loader2 } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { MD5 } from '@/lib/core/lab2'
+
+
+const CHUNK_BYTES = 64 * 32;
+const FILE_READER_CHUNK_SIZE = CHUNK_BYTES * 1024 * 128;
+
+// Generator function to read file in chunks
+function* fileToBytesGenerator(file: File) {
+    let i = 0;
+    while (i < file.size) {
+      const blob = file.slice(i, i + FILE_READER_CHUNK_SIZE);
+      const data = blob.arrayBuffer();
+      for (let j = 0; j < blob.size; j += CHUNK_BYTES) {
+        const size = Math.min(CHUNK_BYTES, blob.size - j);
+        yield data.then(buffer => new Uint8Array(buffer, j, size));
+      }
+      i += FILE_READER_CHUNK_SIZE;
+    }
+}
+
+function* stringToBytesGenerator(string: string) {
+  const arr = new TextEncoder().encode(string);
+  if (!arr.length) {
+    yield Promise.resolve(new Uint8Array([]));
+  }
+  for (let i = 0; i < arr.length; i += CHUNK_BYTES) {
+    yield Promise.resolve(arr.slice(i, i + CHUNK_BYTES));
+  }
+}
+
 
 const md5 = new MD5()
 
@@ -16,38 +45,40 @@ export default function Component() {
   const [error, setError] = useState('')
   const [fileName, setFileName] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
-  const generateMD5 = (content: string) => {
-    if (content.trim() === '') {
-      setError('Please enter some text or upload a file to hash.')
-      setResult('')
-      return
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+        setFileName(file.name);
+        const gen = fileToBytesGenerator(file);
+
+        try {
+          setIsLoading(true);
+          console.time('hashing');
+          const hash = await md5.hashFromGenerator(gen);  // Assuming `md5.hashFileChunks` is added in MD5 class.
+          setResult(hash);
+        } catch (_: unknown) {
+          console.error(_)
+          setError('Error generating MD5 hash.');
+        }
+        setIsLoading(false);
+        console.timeEnd('hashing');
+    }
+  };
+
+  const generateMD5 = async (content: string) => {
+    if (typeof content === 'string') {
+      content = content.trim()
     }
 
     setError('')
-    const hash = md5.hash(content)
+    const gen = stringToBytesGenerator(content)
+    const hash = await md5.hashFromGenerator(gen)
+
     setResult(hash)
   }
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      setFileName(file.name)
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const content = e.target?.result as ArrayBuffer
-        const binaryString = Array.from(new Uint8Array(content))
-          .map(byte => String.fromCharCode(byte))
-          .join('');
-        generateMD5(binaryString)
-      }
-      reader.onerror = () => {
-        setError('Error reading file.') 
-      }
-      // Read as ArrayBuffer to handle binary files like PDFs
-      reader.readAsArrayBuffer(file)
-    }
-  }
 
   return (
     <Card className="w-full max-w-md mx-auto">
@@ -100,7 +131,10 @@ export default function Component() {
         )}
       </CardContent>
       <CardFooter>
-        <Button onClick={() => generateMD5(input)} className="w-full">Generate MD5 Hash</Button>
+        <Button onClick={() => generateMD5(input)} className="w-full" disabled={isLoading}>
+          { isLoading ? <Loader2 /> :
+          "Generate MD5 Hash"}
+        </Button>
       </CardFooter>
     </Card>
   )

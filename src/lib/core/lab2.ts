@@ -1,23 +1,85 @@
 export class MD5 {
-  // Public method to compute MD5 hash of a string
-  public hash(message: string): string {
-    // Step 1: Preprocessing - convert message to UTF-8 and pad it
-    message = this.utf8Encode(message);
-    const x = this.convertToWordArray(message);
+  private A = 0x67452301;
+  private B = 0xefcdab89;
+  private C = 0x98badcfe;
+  private D = 0x10325476;
+  private buffer: Uint8Array = new Uint8Array();
+  private lengthInBits = 0;
 
-    // Step 2: Initialization - Four variables (A, B, C, D) are initialized
-    let A = 0x67452301;
-    let B = 0xefcdab89;
-    let C = 0x98badcfe;
-    let D = 0x10325476;
+  // Process a chunk of data (use this for streaming large data)
+  public update(input: Uint8Array): void {
+    this.buffer = this.concatBuffers(this.buffer, input);
+    this.lengthInBits += input.length * 8;
 
-    // Step 3: Define constants K[i], calculated as abs(sin(i + 1)) * 2^32
+    const chunkSize = 64; // 512 bits
+    while (this.buffer.length >= chunkSize) {
+      const chunk = this.buffer.slice(0, chunkSize);
+      this.buffer = this.buffer.slice(chunkSize);
+      this.processChunk(chunk);
+    }
+  }
+
+  // Process all chunks from a generator, updating hash state
+  public async hashFromGenerator(generator: Generator<Promise<Uint8Array>, void, unknown>): Promise<string> {
+    let i = 0;
+    for (const chunkPromise of generator) {
+      i++
+      if (i % 10000 === 0) {
+        console.log("processing chunk", i++);
+      }
+      const chunk = await chunkPromise; // Get the next chunk from the generator
+      this.update(chunk); // Process the chunk
+    }
+    return this.finalize(); // Finalize and return the hash after all chunks
+  }
+
+  // Finalize the hash calculation once all chunks have been processed
+  public finalize(): string {
+    const padding = this.createPadding();
+    this.update(padding);
+    const res = this.wordToHex(this.A) + this.wordToHex(this.B) + this.wordToHex(this.C) + this.wordToHex(this.D);
+
+    // Clear everything for the next hash calculation
+    this.buffer = new Uint8Array();
+    this.lengthInBits = 0;
+    this.A = 0x67452301;
+    this.B = 0xefcdab89;
+    this.C = 0x98badcfe;
+    this.D = 0x10325476;
+    return res;
+  }
+
+  // Private helper to concatenate buffers
+  private concatBuffers(buffer1: Uint8Array, buffer2: Uint8Array): Uint8Array {
+    const concatenated = new Uint8Array(buffer1.length + buffer2.length);
+    concatenated.set(buffer1);
+    concatenated.set(buffer2, buffer1.length);
+    return concatenated;
+  }
+
+  // Private helper to create padding for the final chunk
+  private createPadding(): Uint8Array {
+    const paddingLength = (this.buffer.length < 56 ? 56 : 120) - this.buffer.length;
+    const padding = new Uint8Array(paddingLength + 8); // +8 for length in bits
+    padding[0] = 0x80; // Append 1 bit, followed by zeros
+    const lengthArray = new Uint8Array(new Uint32Array([this.lengthInBits]).buffer);
+    padding.set(lengthArray, paddingLength); // Append length in bits
+    return padding;
+  }
+
+  // Process a single 512-bit (64-byte) chunk
+  private processChunk(chunk: Uint8Array): void {
+    const x = this.convertToWordArray(chunk);
+    let a = this.A,
+      b = this.B,
+      c = this.C,
+      d = this.D;
+
     const K = [];
     for (let i = 0; i < 64; i++) {
       K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000);
     }
 
-    // Step 4: Define shift amounts s
     const s = [
       // Round 1
       7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
@@ -29,59 +91,49 @@ export class MD5 {
       6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
     ];
 
-    // Step 5: Process the message in successive 512-bit chunks (16 words)
-    for (let i = 0; i < x.length; i += 16) {
-      // Initialize variables for this chunk
-      let a = A;
-      let b = B;
-      let c = C;
-      let d = D;
+    for (let j = 0; j < 64; j++) {
+      let F: number;
+      let g: number;
 
-      // Each round consists of 16 operations
-      for (let j = 0; j < 64; j++) {
-        let F: number = 0;
-        let g: number = 0;
-
-        // Determine the function F and message index g for this operation
-        if (j >= 0 && j <= 15) {
-          // Round 1
-          F = (b & c) | (~b & d);
-          g = j;
-        } else if (j >= 16 && j <= 31) {
-          // Round 2
-          F = (d & b) | (~d & c);
-          g = (5 * j + 1) % 16;
-        } else if (j >= 32 && j <= 47) {
-          // Round 3
-          F = b ^ c ^ d;
-          g = (3 * j + 5) % 16;
-        } else if (j >= 48 && j <= 63) {
-          // Round 4
-          F = c ^ (b | ~d);
-          g = (7 * j) % 16;
-        }
-
-        // Perform the main operation
-        const tempD = d;
-        d = c;
-        c = b;
-        let sum = this.addUnsigned(a, F);
-        sum = this.addUnsigned(sum, x[i + g]);
-        sum = this.addUnsigned(sum, K[j]);
-        const rotated = this.rotateLeft(sum, s[j]);
-        b = this.addUnsigned(b, rotated);
-        a = tempD;
+      if (j >= 0 && j <= 15) {
+        F = (b & c) | (~b & d);
+        g = j;
+      } else if (j >= 16 && j <= 31) {
+        F = (d & b) | (~d & c);
+        g = (5 * j + 1) % 16;
+      } else if (j >= 32 && j <= 47) {
+        F = b ^ c ^ d;
+        g = (3 * j + 5) % 16;
+      } else {
+        F = c ^ (b | ~d);
+        g = (7 * j) % 16;
       }
 
-      // Update the hash values
-      A = this.addUnsigned(A, a);
-      B = this.addUnsigned(B, b);
-      C = this.addUnsigned(C, c);
-      D = this.addUnsigned(D, d);
+      const tempD = d;
+      d = c;
+      c = b;
+
+      let sum = this.addUnsigned(a, F);
+      sum = this.addUnsigned(sum, x[g]);
+      sum = this.addUnsigned(sum, K[j]);
+
+      const rotated = this.rotateLeft(sum, s[j]);
+      b = this.addUnsigned(b, rotated);
+      a = tempD;
     }
 
-    // Step 6: Output the final hash value as a hexadecimal string
-    return (this.wordToHex(A) + this.wordToHex(B) + this.wordToHex(C) + this.wordToHex(D)).toLowerCase();
+    // Update the state variables after processing the chunk
+    this.A = this.addUnsigned(this.A, a);
+    this.B = this.addUnsigned(this.B, b);
+    this.C = this.addUnsigned(this.C, c);
+    this.D = this.addUnsigned(this.D, d);
+  }
+
+   // Add two unsigned 32-bit integers, wrapping at 2^32
+   private addUnsigned(a: number, b: number): number {
+    const lsw = (a & 0xffff) + (b & 0xffff);
+    const msw = (a >>> 16) + (b >>> 16) + (lsw >>> 16);
+    return (msw << 16) | (lsw & 0xffff);
   }
 
   // Left-rotate a 32-bit number by a certain number of bits
@@ -89,59 +141,37 @@ export class MD5 {
     return (x << n) | (x >>> (32 - n));
   }
 
-  // Add two unsigned 32-bit integers, wrapping at 2^32
-  private addUnsigned(a: number, b: number): number {
-    const lsw = (a & 0xffff) + (b & 0xffff);
-    const msw = (a >> 16) + (b >> 16) + (lsw >> 16);
-    return (msw << 16) | (lsw & 0xffff);
-  }
-
-  // Encode the string as UTF-8
-  private utf8Encode(message: string): string {
-    message = message.replace(/\r\n/g, "\n");
-    let utftext = "";
-
-    for (let n = 0; n < message.length; n++) {
-      const c = message.charCodeAt(n);
-
-      if (c < 128) {
-        utftext += String.fromCharCode(c);
-      } else if (c < 2048) {
-        utftext += String.fromCharCode((c >> 6) | 192);
-        utftext += String.fromCharCode((c & 63) | 128);
-      } else {
-        utftext += String.fromCharCode((c >> 12) | 224);
-        utftext += String.fromCharCode(((c >> 6) & 63) | 128);
-        utftext += String.fromCharCode((c & 63) | 128);
-      }
-    }
-
-    return utftext;
-  }
-
-  // Convert a string to an array of 32-bit words
-  private convertToWordArray(message: string): number[] {
-    const messageLength = message.length;
+  // Convert an array of bytes to an array of 32-bit words
+  private convertToWordArray(byteArray: Uint8Array): number[] {
+    const messageLength = byteArray.length;
     const numberOfWords_temp1 = messageLength + 8;
-    const numberOfWords_temp2 = (numberOfWords_temp1 - (numberOfWords_temp1 % 64)) / 64;
-    const numberOfWords = (numberOfWords_temp2 + 1) * 16;
-    const wordArray: number[] = Array(numberOfWords - 1);
+    const numberOfWords_temp2 = ((numberOfWords_temp1 - (numberOfWords_temp1 % 64)) / 64) * 16;
+    const numberOfWords = numberOfWords_temp2 + 16;
+    const wordArray: number[] = new Array(numberOfWords - 1);
     let bytePosition = 0;
     let byteCount = 0;
 
+    // Initialize wordArray
+    for (let i = 0; i < numberOfWords; i++) {
+      wordArray[i] = 0;
+    }
+
+    // Convert byteArray to wordArray
     while (byteCount < messageLength) {
       const wordCount = (byteCount - (byteCount % 4)) / 4;
       bytePosition = (byteCount % 4) * 8;
-      wordArray[wordCount] = wordArray[wordCount] | (message.charCodeAt(byteCount) << bytePosition);
+      wordArray[wordCount] |= byteArray[byteCount] << bytePosition;
       byteCount++;
     }
 
-    // Append padding bits and length
+    // Append padding bits
     const wordCount = (byteCount - (byteCount % 4)) / 4;
     bytePosition = (byteCount % 4) * 8;
-    wordArray[wordCount] = wordArray[wordCount] | (0x80 << bytePosition);
-    wordArray[numberOfWords - 2] = messageLength << 3;
-    wordArray[numberOfWords - 1] = messageLength >>> 29;
+    wordArray[wordCount] |= 0x80 << bytePosition;
+
+    // Append length in bits
+    wordArray[numberOfWords - 2] = messageLength * 8;
+    wordArray[numberOfWords - 1] = 0;
 
     return wordArray;
   }
@@ -149,11 +179,13 @@ export class MD5 {
   // Convert a 32-bit number to a hexadecimal string
   private wordToHex(lValue: number): string {
     let wordToHexValue = "";
-    const hexString = "0123456789abcdef";
-    for (let count = 0; count <= 3; count++) {
-      const byte = (lValue >> (count * 8)) & 255;
-      wordToHexValue += hexString.charAt((byte >> 4) & 0x0f) + hexString.charAt(byte & 0x0f);
+    for (let i = 0; i <= 3; i++) {
+      const byte = (lValue >>> (i * 8)) & 255;
+      const hex = byte.toString(16).padStart(2, "0");
+      wordToHexValue += hex;
     }
     return wordToHexValue;
   }
+
+  // ... Other helper methods remain unchanged ...
 }
