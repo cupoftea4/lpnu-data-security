@@ -1,191 +1,154 @@
+
+const CHUNK_BYTES = 64; // 64 KB sub-chunks within each chunk
+const TAIL_RESERVED_BYTES = 8;
 class MD5 {
   constructor() {
-    this.A = 0x67452301;
-    this.B = 0xefcdab89;
-    this.C = 0x98badcfe;
-    this.D = 0x10325476;
-    this.buffer = new Uint8Array();
-    this.lengthInBits = 0;
-  }
-
-  // Process a chunk of data (use this for streaming large data)
-  update(input) {
-    this.buffer = this.concatBuffers(this.buffer, input);
-    this.lengthInBits += input.length * 8;
-
-    const chunkSize = 64; // 512 bits
-    while (this.buffer.length >= chunkSize) {
-      const chunk = this.buffer.slice(0, chunkSize);
-      this.buffer = this.buffer.slice(chunkSize);
-      this.processChunk(chunk);
-    }
-  }
-
-  // Process all chunks from a generator, updating hash state
-  async hashFromGenerator(generator) {
-    let i = 0;
-    for await (const chunkPromise of generator) {
-      i++;
-      if (i % 10000 === 0) {
-        console.log("processing chunk", i);
-      }
-      const chunk = await chunkPromise; // Get the next chunk from the generator
-      this.update(chunk); // Process the chunk
-    }
-    return this.finalize(); // Finalize and return the hash after all chunks
-  }
-
-  // Finalize the hash calculation once all chunks have been processed
-  finalize() {
-    const padding = this.createPadding();
-    this.update(padding);
-    const res = this.wordToHex(this.A) + this.wordToHex(this.B) + this.wordToHex(this.C) + this.wordToHex(this.D);
-
-    // Clear everything for the next hash calculation
-    this.buffer = new Uint8Array();
-    this.lengthInBits = 0;
-    this.A = 0x67452301;
-    this.B = 0xefcdab89;
-    this.C = 0x98badcfe;
-    this.D = 0x10325476;
-    return res;
-  }
-
-  // Private helper to concatenate buffers
-  concatBuffers(buffer1, buffer2) {
-    const concatenated = new Uint8Array(buffer1.length + buffer2.length);
-    concatenated.set(buffer1);
-    concatenated.set(buffer2, buffer1.length);
-    return concatenated;
-  }
-
-  // Private helper to create padding for the final chunk
-  createPadding() {
-    const paddingLength = (this.buffer.length < 56 ? 56 : 120) - this.buffer.length;
-    const padding = new Uint8Array(paddingLength + 8); // +8 for length in bits
-    padding[0] = 0x80; // Append 1 bit, followed by zeros
-    const lengthArray = new Uint8Array(new Uint32Array([this.lengthInBits]).buffer);
-    padding.set(lengthArray, paddingLength); // Append length in bits
-    return padding;
-  }
-
-  // Process a single 512-bit (64-byte) chunk
-  processChunk(chunk) {
-    const x = this.convertToWordArray(chunk);
-    let a = this.A,
-      b = this.B,
-      c = this.C,
-      d = this.D;
-
-    const K = [];
-    for (let i = 0; i < 64; i++) {
-      K[i] = Math.floor(Math.abs(Math.sin(i + 1)) * 0x100000000);
-    }
-
-    const s = [
-      // Round 1
+    this.S = [
       7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
-      // Round 2
       5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
-      // Round 3
       4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
-      // Round 4
-      6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+      6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21
     ];
+    this.T = this.S.map((s, i) => (Math.floor(Math.pow(2, 32) * Math.abs(Math.sin(i + 1)))) & 0xFFFFFFFF);
+    this.DEFAULT_REGISTERS = {
+      a: 0x67452301,
+      b: 0xefcdab89,
+      c: 0x98badcfe,
+      d: 0x10325476
+    };
+  }
 
-    for (let j = 0; j < 64; j++) {
-      let F;
-      let g;
+  async hash(dataGenerator) {
+    let registers = { ...this.DEFAULT_REGISTERS };
+    let totalLength = 0;
+    let genChunk = await dataGenerator.next();
+    let lastChunk = await genChunk.value;
+    totalLength += lastChunk.length;
 
-      if (j >= 0 && j <= 15) {
-        F = (b & c) | (~b & d);
-        g = j;
-      } else if (j >= 16 && j <= 31) {
-        F = (d & b) | (~d & c);
-        g = (5 * j + 1) % 16;
-      } else if (j >= 32 && j <= 47) {
-        F = b ^ c ^ d;
-        g = (3 * j + 5) % 16;
-      } else {
-        F = c ^ (b | ~d);
-        g = (7 * j) % 16;
+    while (!genChunk.done) {
+      const currentChunk = lastChunk;
+      genChunk = await dataGenerator.next();
+      const nextChunk = await genChunk.value;
+      if (!nextChunk) break;
+      totalLength += nextChunk.length;
+
+      // Process current chunk in 64-byte blocks
+      for (let i = 0; i < currentChunk.length; i += 64) {
+        const block = currentChunk.slice(i, i + 64);
+        registers = await this.md5Cycle(block, registers);
       }
 
-      const tempD = d;
+      lastChunk = nextChunk;
+    }
+
+    // Handle the final chunk
+    if (lastChunk.length === CHUNK_BYTES) {
+      for (let i = 0; i < lastChunk.length; i += 64) {
+        const block = lastChunk.slice(i, i + 64);
+        registers = await this.md5Cycle(block, registers);
+      }
+      lastChunk = new Uint8Array([0x80, ...new Array(CHUNK_BYTES - TAIL_RESERVED_BYTES - 1).fill(0), ...this.longToByteArray(totalLength * 8)]);
+    }
+
+    if (lastChunk.length < CHUNK_BYTES) {
+      const missingBytes = CHUNK_BYTES - lastChunk.length - TAIL_RESERVED_BYTES;
+      if (missingBytes <= 0) {
+        lastChunk = new Uint8Array([...lastChunk, 0x80, ...new Array(CHUNK_BYTES - lastChunk.length - 1).fill(0)]);
+        for (let i = 0; i < lastChunk.length; i += 64) {
+          const block = lastChunk.slice(i, i + 64);
+          registers = await this.md5Cycle(block, registers);
+        }
+        lastChunk = new Uint8Array([...new Array(CHUNK_BYTES - TAIL_RESERVED_BYTES).fill(0), ...this.longToByteArray(totalLength * 8)]);
+      } else {
+        const padding = [0x80, ...new Array(missingBytes - 1).fill(0), ...this.longToByteArray(totalLength * 8)];
+        lastChunk = this.concatTypedArrays(lastChunk, new Uint8Array(padding));
+      }
+    }
+
+    for (let i = 0; i < lastChunk.length; i += 64) {
+      const block = lastChunk.slice(i, i + 64);
+      registers = await this.md5Cycle(block, registers);
+    }
+
+    const hex = Object.values(registers).map(this.rhex).join('');
+    return hex;
+  }
+
+  async md5Cycle(chunk, registers) {
+    const { a: a0, b: b0, c: c0, d: d0 } = registers;
+    let f, g;
+    let a = a0, b = b0, c = c0, d = d0;
+
+    for (let i = 0; i < CHUNK_BYTES; ++i) {
+      if (i < CHUNK_BYTES / 4) {
+        f = (b & c) | ((~b) & d);
+        g = i;
+      } else if (i < CHUNK_BYTES / 4 * 2) {
+        f = (b & d) | (c & (~d));
+        g = (5 * i + 1) % 16;
+      } else if (i < CHUNK_BYTES / 4 * 3) {
+        f = b ^ c ^ d;
+        g = (3 * i + 5) % 16;
+      } else {
+        f = c ^ (b | (~d));
+        g = (7 * i) % 16;
+      }
+
+      const data = this.bytesToInt(chunk, g);
+      f = this.add32(f, this.add32(a, this.add32(this.T[i], data)));
+      a = d;
       d = c;
       c = b;
-
-      let sum = this.addUnsigned(a, F);
-      sum = this.addUnsigned(sum, x[g]);
-      sum = this.addUnsigned(sum, K[j]);
-
-      const rotated = this.rotateLeft(sum, s[j]);
-      b = this.addUnsigned(b, rotated);
-      a = tempD;
+      b = this.add32(b, this.leftRotate(f, this.S[i]));
     }
 
-    // Update the state variables after processing the chunk
-    this.A = this.addUnsigned(this.A, a);
-    this.B = this.addUnsigned(this.B, b);
-    this.C = this.addUnsigned(this.C, c);
-    this.D = this.addUnsigned(this.D, d);
+    return {
+      a: this.add32(a0, a),
+      b: this.add32(b0, b),
+      c: this.add32(c0, c),
+      d: this.add32(d0, d)
+    };
   }
 
-  // Add two unsigned 32-bit integers, wrapping at 2^32
-  addUnsigned(a, b) {
-    const lsw = (a & 0xffff) + (b & 0xffff);
-    const msw = (a >>> 16) + (b >>> 16) + (lsw >>> 16);
-    return (msw << 16) | (lsw & 0xffff);
+  add32(a, b) {
+    return (a + b) & 0xFFFFFFFF;
   }
 
-  // Left-rotate a 32-bit number by a certain number of bits
-  rotateLeft(x, n) {
-    return (x << n) | (x >>> (32 - n));
+  leftRotate(a, s) {
+    return (a << s) | (a >>> (32 - s));
   }
 
-  // Convert an array of bytes to an array of 32-bit words
-  convertToWordArray(byteArray) {
-    const messageLength = byteArray.length;
-    const numberOfWords_temp1 = messageLength + 8;
-    const numberOfWords_temp2 = ((numberOfWords_temp1 - (numberOfWords_temp1 % 64)) / 64) * 16;
-    const numberOfWords = numberOfWords_temp2 + 16;
-    const wordArray = new Array(numberOfWords - 1);
-    let bytePosition = 0;
-    let byteCount = 0;
+  concatTypedArrays(a, b) {
+    const c = new (a.constructor)(a.length + b.length);
+    c.set(a, 0);
+    c.set(b, a.length);
+    return c;
+  }
 
-    // Initialize wordArray
-    for (let i = 0; i < numberOfWords; i++) {
-      wordArray[i] = 0;
+  rhex(n) {
+    const hexChr = '0123456789abcdef'.split('');
+    let s = '', j = 0;
+    for (; j < 4; j++) {
+      s += hexChr[(n >> (j * 8 + 4)) & 0x0F] + hexChr[(n >> (j * 8)) & 0x0F];
     }
-
-    // Convert byteArray to wordArray
-    while (byteCount < messageLength) {
-      const wordCount = (byteCount - (byteCount % 4)) / 4;
-      bytePosition = (byteCount % 4) * 8;
-      wordArray[wordCount] |= byteArray[byteCount] << bytePosition;
-      byteCount++;
-    }
-
-    // Append padding bits
-    const wordCount = (byteCount - (byteCount % 4)) / 4;
-    bytePosition = (byteCount % 4) * 8;
-    wordArray[wordCount] |= 0x80 << bytePosition;
-
-    // Append length in bits
-    wordArray[numberOfWords - 2] = messageLength * 8;
-    wordArray[numberOfWords - 1] = 0;
-
-    return wordArray;
+    return s;
   }
 
-  // Convert a 32-bit number to a hexadecimal string
-  wordToHex(lValue) {
-    let wordToHexValue = "";
-    for (let i = 0; i <= 3; i++) {
-      const byte = (lValue >>> (i * 8)) & 255;
-      const hex = byte.toString(16).padStart(2, "0");
-      wordToHexValue += hex;
+  bytesToInt(bytes, shift) {
+    let int = 0;
+    for (let i = 0; i < 4; ++i) {
+      int |= bytes[shift * 4 + i] << (i * 8);
     }
-    return wordToHexValue;
+    return int;
+  }
+
+  longToByteArray(long) {
+    const byteArray = [0, 0, 0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < byteArray.length; i++) {
+      const byte = long & 0xff;
+      byteArray[i] = byte;
+      long = (long - byte) / 256;
+    }
+    return byteArray;
   }
 }

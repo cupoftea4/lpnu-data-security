@@ -10,10 +10,12 @@ self.onmessage = async (e) => {
     let i = 0;
     while (i < file.size) {
       const blob = file.slice(i, i + FILE_READER_CHUNK_SIZE);
-      const data = await blob.arrayBuffer();
-      for (let j = 0; j < blob.size; j += CHUNK_BYTES) {
-        const size = Math.min(CHUNK_BYTES, blob.size - j);
-        yield new Uint8Array(data, j, size);
+      const data = await blob.arrayBuffer(); // Fully load the chunk
+      const chunk = new Uint8Array(data);
+  
+      // Yield the chunk in smaller parts if needed
+      for (let j = 0; j < chunk.length; j += CHUNK_BYTES) {
+        yield chunk.slice(j, Math.min(j + CHUNK_BYTES, chunk.length));
       }
       i += FILE_READER_CHUNK_SIZE;
     }
@@ -21,7 +23,7 @@ self.onmessage = async (e) => {
 
   try {
     const gen = fileToBytesGenerator(file);
-    const hash = await md5.hashFromGenerator(gen);
+    const hash = await md5.hash(gen);
     self.postMessage({ hash });
   } catch (error) {
     console.error(error);

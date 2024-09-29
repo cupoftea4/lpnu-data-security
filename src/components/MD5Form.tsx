@@ -9,8 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { MD5 } from '@/lib/core/lab2'
 
 
-const CHUNK_BYTES = 64 * 32;
-const FILE_READER_CHUNK_SIZE = CHUNK_BYTES * 1024 * 128;
+const FILE_READER_CHUNK_SIZE = 1024 * 128; // 128 KB chunks
+const CHUNK_BYTES = 64; // 64 KB sub-chunks within each chunk
 
 
 function* stringToBytesGenerator(string: string) {
