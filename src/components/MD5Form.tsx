@@ -12,19 +12,6 @@ import { MD5 } from '@/lib/core/lab2'
 const CHUNK_BYTES = 64 * 32;
 const FILE_READER_CHUNK_SIZE = CHUNK_BYTES * 1024 * 128;
 
-// Generator function to read file in chunks
-function* fileToBytesGenerator(file: File) {
-    let i = 0;
-    while (i < file.size) {
-      const blob = file.slice(i, i + FILE_READER_CHUNK_SIZE);
-      const data = blob.arrayBuffer();
-      for (let j = 0; j < blob.size; j += CHUNK_BYTES) {
-        const size = Math.min(CHUNK_BYTES, blob.size - j);
-        yield data.then(buffer => new Uint8Array(buffer, j, size));
-      }
-      i += FILE_READER_CHUNK_SIZE;
-    }
-}
 
 function* stringToBytesGenerator(string: string) {
   const arr = new TextEncoder().encode(string);
@@ -50,20 +37,31 @@ export default function Component() {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-        setFileName(file.name);
-        const gen = fileToBytesGenerator(file);
+      setFileName(file.name);
+      
+      setIsLoading(true);
 
-        try {
-          setIsLoading(true);
-          console.time('hashing');
-          const hash = await md5.hashFromGenerator(gen);  // Assuming `md5.hashFileChunks` is added in MD5 class.
+      const worker = new Worker('/worker.js');
+      worker.postMessage({
+        file,
+        FILE_READER_CHUNK_SIZE,
+        CHUNK_BYTES,
+      });
+
+      worker.onmessage = (e) => {
+        const { hash, error } = e.data;
+        if (error) {
+          setError(error);
+        } else {
           setResult(hash);
-        } catch (_: unknown) {
-          console.error(_)
-          setError('Error generating MD5 hash.');
         }
         setIsLoading(false);
-        console.timeEnd('hashing');
+      };
+
+      worker.onerror = () => {
+        setError('Error processing file.');
+        setIsLoading(false);
+      };
     }
   };
 
@@ -132,7 +130,7 @@ export default function Component() {
       </CardContent>
       <CardFooter>
         <Button onClick={() => generateMD5(input)} className="w-full" disabled={isLoading}>
-          { isLoading ? <Loader2 /> :
+          { isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> :
           "Generate MD5 Hash"}
         </Button>
       </CardFooter>
