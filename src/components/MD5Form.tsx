@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MD5 } from "@/lib/core/lab2";
 
 const CHUNK_BYTES = 64;
-const FILE_READER_CHUNK_SIZE = CHUNK_BYTES * 1024 * 128;
 
 function* stringToBytesGenerator(string: string) {
   const arr = new TextEncoder().encode(string);
@@ -44,8 +43,6 @@ export default function Component() {
       const worker = new Worker("/worker.js");
       worker.postMessage({
         file,
-        FILE_READER_CHUNK_SIZE,
-        CHUNK_BYTES,
       });
 
       worker.onmessage = (e) => {
@@ -53,13 +50,13 @@ export default function Component() {
 
         // Handle progress updates
         if (type === "update") {
-          setProgress(parseFloat(progress)); // Update progress with percentage
+          setProgress(parseFloat(progress));
         }
 
         // Handle final hash result
         if (type === "complete") {
           setResult(hash);
-          setProgress(100); // Set progress to 100% when done
+          setProgress(100);
           setTimeTaken(timeTaken);
           setIsLoading(false);
         }
