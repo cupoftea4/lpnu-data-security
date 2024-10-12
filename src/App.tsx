@@ -3,6 +3,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import Lab1 from "./pages/Lab1";
 import Navigation from "./pages/Navigation";
 import Lab2 from "./pages/Lab2";
+import Lab3 from "./pages/Lab3";
 
 const router = createBrowserRouter([
   {
@@ -17,6 +18,10 @@ const router = createBrowserRouter([
     path: "/lab2",
     element: <Lab2 />,
   },
+  {
+    path: "/lab3",
+    element: <Lab3 />,
+  }
 ]);
 
 function App() {

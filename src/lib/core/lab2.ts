@@ -1,3 +1,16 @@
+export const CHUNK_BYTES = 64;
+
+export function* stringToBytesGenerator(string: string) {
+  const arr = new TextEncoder().encode(string);
+  if (!arr.length) {
+    yield Promise.resolve(new Uint8Array([]));
+  }
+  for (let i = 0; i < arr.length; i += CHUNK_BYTES) {
+    yield Promise.resolve(arr.slice(i, i + CHUNK_BYTES));
+  }
+}
+
+
 export class MD5 {
   private A = 0x67452301;
   private B = 0xefcdab89;
@@ -5,6 +18,10 @@ export class MD5 {
   private D = 0x10325476;
   private buffer: Uint8Array = new Uint8Array();
   private lengthInBits = 0;
+
+  public hashStr(input: string) {
+    return this.hashFromGenerator(stringToBytesGenerator(input));
+  }
 
   // Process a chunk of data (use this for streaming large data)
   public update(input: Uint8Array): void {

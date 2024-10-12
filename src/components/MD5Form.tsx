@@ -6,19 +6,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MD5 } from "@/lib/core/lab2";
-
-const CHUNK_BYTES = 64;
-
-function* stringToBytesGenerator(string: string) {
-  const arr = new TextEncoder().encode(string);
-  if (!arr.length) {
-    yield Promise.resolve(new Uint8Array([]));
-  }
-  for (let i = 0; i < arr.length; i += CHUNK_BYTES) {
-    yield Promise.resolve(arr.slice(i, i + CHUNK_BYTES));
-  }
-}
+import { MD5, stringToBytesGenerator } from "@/lib/core/lab2";
 
 const md5 = new MD5();
 
