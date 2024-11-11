@@ -27,14 +27,14 @@ const Navigation = () => {
           <h3 className="mt-4 text-xl font-semibold text-secondary-foreground">RC5</h3>
         </Link>
         <Link
-          to="#"
+          to="lab4"
           className="bg-white rounded-lg p-6 flex flex-col items-center justify-center hover:scale-105 transition-transform"
         >
           <Dice4 className="h-12 w-12 text-primary" />
-          <h3 className="mt-4 text-xl font-semibold text-primary">???</h3>
+          <h3 className="mt-4 text-xl font-semibold text-primary">?RSA</h3>
         </Link>
         <Link
-          to="#"
+          to="lab5"
           className="bg-white rounded-lg p-6 flex flex-col items-center justify-center hover:scale-105 transition-transform"
         >
           <Dice5 className="h-12 w-12 text-secondary-foreground" />
