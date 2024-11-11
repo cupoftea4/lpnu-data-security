@@ -1,4 +1,4 @@
-import Form from '@/components/Form'
+import Form from '@/components/LCGForm'
 import { House } from 'lucide-react'
 import { Link } from 'react-router-dom'
 

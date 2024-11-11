@@ -5,6 +5,7 @@ import Navigation from "./pages/Navigation";
 import Lab2 from "./pages/Lab2";
 import Lab3 from "./pages/Lab3";
 import Lab4 from "./pages/Lab4";
+import Lab5 from "./pages/Lab5";
 
 const router = createBrowserRouter([
   {
@@ -26,7 +27,11 @@ const router = createBrowserRouter([
   {
     path: "/lab4",
     element: <Lab4 />,
-  }
+  },
+  {
+    path: "/lab5",
+    element: <Lab5 />,
+  },
 ]);
 
 function App() {
