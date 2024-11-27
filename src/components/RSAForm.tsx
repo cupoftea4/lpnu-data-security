@@ -12,12 +12,12 @@ export default function RSAAlgorithmUI() {
   const [publicKey, setPublicKey] = useState('')
   const [privateKey, setPrivateKey] = useState('')
   const [fileToEncrypt, setFileToEncrypt] = useState<File | null>(null)
-  // const [fileToDecrypt, setFileToDecrypt] = useState<File | null>(null)
+  const [fileToDecrypt, setFileToDecrypt] = useState<File | null>(null)
   const [encryptedData, setEncryptedData] = useState<ArrayBuffer | null>(null)
   const [decryptedData, setDecryptedData] = useState<string | null>('')
 
   const encryptInputRef = useRef<HTMLInputElement | null>(null);
-  // const decryptInputRef = useRef<HTMLInputElement | null>(null);
+  const decryptInputRef = useRef<HTMLInputElement | null>(null);
 
   // Helper function to download the encrypted/decrypted file
   const downloadFile = (data: ArrayBuffer, filename: string) => {
@@ -60,18 +60,19 @@ export default function RSAAlgorithmUI() {
     }
   };
 
-  // const handleFileDecryptChange = (file: File | null) => {
-  //   setFileToDecrypt(file);
-  // };
+  const handleFileDecryptChange = (file: File | null) => {
+    setFileToDecrypt(file);
+  };
 
   const decryptFile = async () => {
-    if (!encryptedData) {
-      alert('No encrypted data found.');
+    if (!fileToDecrypt) {
+      alert('Please select a file to decrypt.');
       return;
     }
 
     try {
-      const decrypted = await rsaService.decryptFile(encryptedData);
+      const encrypted = await fileToDecrypt.arrayBuffer();
+      const decrypted = await rsaService.decryptFile(encrypted);
       setDecryptedData(new TextDecoder().decode(decrypted));
     } catch (error) {
       alert('Decryption failed.');
@@ -124,6 +125,11 @@ export default function RSAAlgorithmUI() {
           <CardTitle>File Decryption</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          <Input
+            ref={decryptInputRef} // Reference to the file input
+            type="file"
+            onChange={(e) => handleFileDecryptChange(e.target.files?.[0] || null)}
+          />
           <Button onClick={decryptFile}>Decrypt File</Button>
           {decryptedData && (
             <div className="space-y-2">

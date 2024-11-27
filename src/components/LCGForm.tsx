@@ -34,7 +34,7 @@ export default function Form() {
       n: evaluate(nValue), // Use the value of n from the input
     };
     setStatus("In Progress");
-    // Send POST request to the backend
+
     fetch("http://localhost:3000/run", {
       method: "POST",
       headers: {
